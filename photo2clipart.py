@@ -241,9 +241,12 @@ def images(node, idx):
         images(node.children[i], idx + str(i))
 
 def main():
-    p2c = Photo2ClipArt("img/2_cherry/input.png", "img/2_cherry/segmentation.png")
+    p2c = Photo2ClipArt("img/9_egg/input.png", "img/9_egg/segmentation.png")
     root = p2c.monte_carlo()
     images(root, "0")
+    cv2.imshow('input', p2c.input_img)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
     #for i in range(len(res)):
     #    gen_layer = res[i].domain * res[i].c0 * res[i].a0
     #    bgr = cv2.split(gen_layer)
