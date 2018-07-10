@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import random
 from hashlib import sha1
-
+import sys
 
 class Layer:
 
@@ -22,14 +22,17 @@ class Layer:
 
 class Node:
 
-    def __init__(self, x, parent=None):
+    def __init__(self, x, used, parent=None):
         self.children = []
         self.parent = parent
         self.x = x
         self.reward = 0.0
+        self.used = used
 
-    def add_child(self, x):
-        child = Node(x, parent=self)
+    def add_child(self, x, id):
+        child_used = self.used
+        child_used[id] = True
+        child = Node(x, child_used, parent=self)
         self.children.append(child)
 
     def size(self):
@@ -69,6 +72,34 @@ class Node:
         self.reward = min_reward
         return self.reward
 
+def is_adj(domain1, domain2):
+    d1 = np.roll(domain1, -1, axis=0)
+    d2 = np.roll(domain1, 1, axis=0)
+    d3 = np.roll(domain1, -1, axis=1)
+    d4 = np.roll(domain1, 1, axis=1)
+    d1[:,0] = 0
+    d2[:,-1] = 0
+    d3[0] = 0
+    d4[-1] = 0
+    d5 = np.roll(d1, -1, axis=1)
+    d6 = np.roll(d1, 1, axis=1)
+    d7 = np.roll(d2, -1, axis=1)
+    d8 = np.roll(d2, 1, axis=1)
+    d5[0] = 0
+    d6[-1] = 0
+    d7[:,0] = 0
+    d8[:,-1] = 0
+    d1 += domain2
+    d2 += domain2
+    d3 += domain2
+    d4 += domain2
+    d5 += domain2
+    d6 += domain2
+    d7 += domain2
+    d8 += domain2
+    return len(d1[d1 >= 2]) != 0 or len(d2[d2 >= 2]) != 0 or len(d3[d3 >= 2]) != 0 or len(d4[d4 >= 2]) != 0 \
+        or len(d5[d5 >= 2]) != 0 or len(d6[d6 >= 2]) != 0 or len(d7[d7 >= 2]) != 0 or len(d8[d8 >= 2]) != 0
+
 class Photo2ClipArt:
 
     def __init__(self, input_path, segment_path, lmd=0.5, beta=1.2):
@@ -89,6 +120,7 @@ class Photo2ClipArt:
         print(len(self.domains))
         self.lmd = lmd
         self.beta = beta
+        self.log_cnt = 0
 
     def calc_domains(self):
         domain_dict = {}
@@ -125,11 +157,13 @@ class Photo2ClipArt:
     def fitNewLayer(self, dom):
         target = self.input_img.copy()
         target[dom != 1] = 0
+        cv2.imwrite("log/log_{}.png".format(self.log_cnt), target)
+        self.log_cnt += 1
         # sub sampling
         indx = np.where(dom == 1)
         ri = random.randint(0, len(indx[0])-1)
         pos = (indx[0][ri], indx[1][ri])
-        return Layer(self.input_img[pos], np.zeros((3,),np.uint8),\
+        return Layer(self.input_img[pos].copy(), np.zeros((3,),np.uint8),\
                 np.array([1,1,1], dtype=np.uint8), np.zeros((3,),np.uint8), dom)
         #for _ in range(10):
         #    rx = random.randint(0, num-1) * 3
@@ -141,82 +175,51 @@ class Photo2ClipArt:
     def init_reward(self, node):
         gen_img = np.zeros(self.input_img.shape, np.uint8)
         for l in node.x:
-            gen_img += l.domain * l.c0 * l.a0 + (1 - l.domain * l.a0) * gen_img
+            gen_img += l.domain * l.c0 + (1 - l.domain) * gen_img
 
         node.reward = self.energy(node.x, gen_img)
         #cv2.imshow('Geberated Image test', gen_img)
         #cv2.waitKey(0)
         #cv2.destroyAllWindows()
 
-    def enum_regions(self, visited):
-        ret = []
-        for (i, domain) in enumerate(self.domains):
-            check_vis = visited + domain
-            if len(check_vis[check_vis >= 2]) != 0:
-                continue
-            d1 = np.roll(domain, 1, axis=0)
-            d1[:,0] = 0
-            d1 += visited
-            d2 = np.roll(domain, -1, axis=0)
-            d2[:,-1] = 0
-            d2 += visited
-            d3 = np.roll(domain, 1, axis=1)
-            d3[0] = 0
-            d3 += visited
-            d4 = np.roll(domain, -1, axis=1)
-            d4[-1] = 0
-            d4 += visited
-            if len(d1[d1 >= 2]) != 0 or len(d2[d2 >= 2]) != 0 or len(d3[d3 >= 2]) != 0 or len(d4[d4 >= 2]) != 0:
-                ret.append(i)
-            elif i == len(self.domains)-1:
-                ret.append(i)
-        return ret
-
     def gen_child(self, base):
         # expansion
         visited = base.visited_domain()
-        sindx = self.enum_regions(visited)
+        sindx = [] # self.enum_regions(visited)
+        for i in range(len(self.domains)):
+            if not base.used[i]:
+                sindx.append(i)
         if len(sindx) == 0:
             return
         for idx in sindx:
             extend_layer = 0
             for j in range(len(base.x)):
-                d1 = np.roll(self.domains[idx], 1, axis=0)
-                d1[:,0] = 0
-                d1 += base.x[j].domain
-                d2 = np.roll(self.domains[idx], -1, axis=0)
-                d2[:,-1] = 0
-                d2 += base.x[j].domain
-                d3 = np.roll(self.domains[idx], 1, axis=1)
-                d3[0] = 0
-                d3 += base.x[j].domain
-                d4 = np.roll(self.domains[idx], -1, axis=1)
-                d4[-1] = 0
-                d4 += base.x[j].domain
-                if len(d1[d1 >= 2]) != 0 or len(d2[d2 >= 2]) != 0 or len(d3[d3 >= 2]) != 0 or len(d4[d4 >= 2]) != 0:
+                if is_adj(self.domains[idx], base.x[j].domain):
                     extend_layer = j
                     break
             # extend existing layer
             new_x = base.x.copy()
             new_x[extend_layer].domain += self.domains[idx]
+            new_x[extend_layer].domain[new_x[extend_layer].domain != 0] = 1
             # generate new layer
             new_x2 = base.x.copy()
             new_x2.append(self.fitNewLayer(self.domains[idx].copy()))
-            base.add_child(new_x)
-            base.add_child(new_x2)
+            base.add_child(new_x, extend_layer)
+            base.add_child(new_x2, extend_layer)
         # reward
         for i in range(len(base.children)):
             self.init_reward(base.children[i])
+        base.children.sort(key=lambda x:x.reward)
+        base.children = base.children[:5]
 
     def monte_carlo(self):
         layer = self.fitNewLayer(self.domains[0].copy())
-        root = Node([layer])
+        used = [True if i == 0 else False for i in range(len(self.domains))]
+        root = Node([layer], used=used)
         self.init_reward(root)
         print(root.reward)
         iter_count = 0
-        pre_size = 0
-        while root.size() <= 4 * len(self.domains) and pre_size != root.size():
-            pre_size = root.size()
+        while root.size() <= 4 * len(self.domains):
             # node selection
             base_p = root.select()
             if base_p is None:
@@ -230,28 +233,32 @@ class Photo2ClipArt:
             print("{}: size {}, root ene: {}".format(iter_count, root.size(), root.reward))
         return root
 
-def images(node, idx):
+def images(node, idx, file):
     gen_img = np.zeros(node.x[0].domain.shape, np.uint8)
     for l in node.x:
-        gen_img += l.domain * l.c0 * l.a0 + (1 - l.domain * l.a0) * gen_img
+        gen_img += l.domain * l.c0 + (1 - l.domain) * gen_img
     bgr = cv2.split(gen_img)
     bgra = cv2.merge(bgr + [node.visited_domain()[:,:,0] * 255])
-    cv2.imwrite("res/result_{}.png".format(idx), bgra)
+    cv2.imwrite("res_test/{}_result_{}.png".format(file, idx), bgra)
     for i in range(len(node.children)):
-        images(node.children[i], idx + str(i))
+        images(node.children[i], idx + str(i), file)
 
-def main():
-    p2c = Photo2ClipArt("img/9_egg/input.png", "img/9_egg/segmentation.png")
+def main(file):
+    p2c = Photo2ClipArt("img/{}/input.png".format(file), "img/{}/segmentation.png".format(file))
     root = p2c.monte_carlo()
-    images(root, "0")
-    cv2.imshow('input', p2c.input_img)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
-    #for i in range(len(res)):
-    #    gen_layer = res[i].domain * res[i].c0 * res[i].a0
-    #    bgr = cv2.split(gen_layer)
-    #    bgra = cv2.merge(bgr + [res[i].domain[:,:,0] * 255])
-    #    cv2.imwrite("res/layer_{}.png".format(i), bgra)
+    images(root, "0", file)
+    # cv2.imshow('input', p2c.input_img)
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
+    if root.children[0].reward < root.children[1].reward:
+        res = root.children[0].x
+    else:
+        res = root.children[1].x
+    for i in range(len(res)):
+       gen_layer = res[i].domain * res[i].c0 # * res[i].a0
+       bgr = cv2.split(gen_layer)
+       bgra = cv2.merge(bgr + [res[i].domain[:,:,0] * 255])
+       cv2.imwrite("res/layer_{}.png".format(i), bgra)
 
 if __name__ == '__main__':
-    main()
+    main(sys.argv[1])
