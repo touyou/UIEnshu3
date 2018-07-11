@@ -109,3 +109,5 @@ venv.bak/
 img/
 
 *.mp4
+
+old/
