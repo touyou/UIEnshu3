@@ -1,4 +1,5 @@
 import numpy as np
+import cv2
 
 def is_adj(domain1, domain2):
     d1 = np.roll(domain1, -1, axis=0)
@@ -27,3 +28,14 @@ def is_adj(domain1, domain2):
     d8 += domain2
     return len(d1[d1 >= 2]) != 0 or len(d2[d2 >= 2]) != 0 or len(d3[d3 >= 2]) != 0 or len(d4[d4 >= 2]) != 0 \
         or len(d5[d5 >= 2]) != 0 or len(d6[d6 >= 2]) != 0 or len(d7[d7 >= 2]) != 0 or len(d8[d8 >= 2]) != 0
+
+def images(node, idx, file):
+    gen_img = np.zeros(node.x[0].domain.shape, np.uint8)
+    for l in node.x:
+        l_img = np.tile(l.c0, (gen_img.shape[0], gen_img.shape[1], 1))
+        gen_img += l_img * l.domain + gen_img * (1 - l.domain)
+    bgr = cv2.split(gen_img)
+    bgra = cv2.merge(bgr + [node.visited_domain()[:,:,0] * 255])
+    cv2.imwrite("old/res_test/{}_result_{}_{}.png".format(file, idx, node.reward), bgra)
+    for i in range(len(node.children)):
+        images(node.children[i], idx + str(i), file)

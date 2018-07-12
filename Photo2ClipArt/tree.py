@@ -1,4 +1,5 @@
 import numpy as np
+import copy
 
 class Node:
     
@@ -10,7 +11,7 @@ class Node:
         self.used = used
         
     def add_child(self, x, id):
-        child_used = self.used
+        child_used = copy.deepcopy(self.used)
         child_used[id] = True
         child = Node(x, child_used, parent=self)
         self.children.append(child)
@@ -23,7 +24,7 @@ class Node:
     def select(self):
         if len(self.children) == 0:
             return self
-        self.children.sort(key=lambda x:x.reward)
+        self.children.sort(key=lambda x:x.reward / sum([1 if i else 0 for i in x.used]))
         # 確率が高いのは一番rewardの値が低いchildrenのはず
         return self.children[0].select()
     
