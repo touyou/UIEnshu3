@@ -237,7 +237,7 @@ class Photo2ClipArt:
             if base.parent is None:
                 self.gen_child(base)
             else:
-                for i in range(min(len(base.parent.children), 2)):
+                for i in range(len(base.parent.children)):
                     self.gen_child(base.parent.children[i])
             # back propagation
             root.update_reward()
