@@ -45,8 +45,8 @@ class Photo2ClipArt:
         print("domain dict: {}".format(domain_dict))
     
     def simplicity(self, x):
-        N = len(x)
-        return sum([1.0 if l.is_alpha() else self.beta for l in x])
+        N = len(self.domains)
+        return sum([1.0 if l.is_alpha() else self.beta for l in x]) / N
     
     def fidelity(self, x, new_img):
         domain = np.zeros(new_img.shape, np.uint8)
@@ -72,9 +72,9 @@ class Photo2ClipArt:
         def jacobi_a1(img_x, c0, c1, oc, p, a0, a1, oa, sub_img_x): # 同上
             return 2 * (img_x - (c0 + c1 * oc.dot(p)) * (a0 + a1 * oa.dot(p)) - (1 - a0 - a1 * oa.dot(p)) * sub_img_x) * (sub_img_x - (c0 + c1 * oc.dot(p)))  * oa.dot(p)
         def jacobi_oc(img_x, c0, c1, oc, p, a0, a1, oa, sub_img_x, idx):
-            return 2 * (img_x - (c0 + c1 * oc.dot(p)) * (a0 + a1 * oa.dot(p)) - (1 - a0 - a1 * oa.dot(p)) * sub_img_x) * (- c1 * p[idx,0] * (a0 + a1 * oa.dot(p)))
+            return 2 * (img_x - (c0 + c1 * oc.dot(p)) * (a0 + a1 * oa.dot(p)) - (1 - a0 - a1 * oa.dot(p)) * sub_img_x) * (- c1 * p[idx] * (a0 + a1 * oa.dot(p)))
         def jacobi_oa(img_x, c0, c1, oc, p, a0, a1, oa, sub_img_x, idx):
-            return 2 * (img_x - (c0 + c1 * oc.dot(p)) * (a0 + a1 * oa.dot(p)) - (1 - a0 - a1 * oa.dot(p)) * sub_img_x) * (a1 * p[idx, 0] * sub_img_x - a1 * p[idx, 0] * (c0 + c1 * oc.dot(p)))
+            return 2 * (img_x - (c0 + c1 * oc.dot(p)) * (a0 + a1 * oa.dot(p)) - (1 - a0 - a1 * oa.dot(p)) * sub_img_x) * (a1 * p[idx] * sub_img_x - a1 * p[idx] * (c0 + c1 * oc.dot(p)))
         img = copy.deepcopy(self.input_img[iy, ix])
         c0 = np.array([xs[0], xs[1], xs[2]], dtype=np.uint8)
         c1 = np.array([xs[3], xs[4], xs[5]], dtype=np.uint8)
@@ -105,30 +105,53 @@ class Photo2ClipArt:
         target[dom != 1] = 0
         idx = np.where(dom == 1)
         # 12pixel以下は別のレイヤーの一部にしたいけど一旦適当に単色にしておく方針で
-        if len(idx) < 12:
+        if len(idx[0]) < 12:
             return Layer(copy.deepcopy(self.input_img[idx[0][0], idx[1][0]]), np.zeros((3,), np.uint8), 1.0, 0.0, np.array([0, 0]), np.array([0, 0]), dom)
-        sub_idx = random.sample(idx, 12)
+        sub_idx = random.sample(range(len(idx[0])), 12)
         sub_pos = [(idx[0][ri], idx[1][ri]) for ri in sub_idx]
         sub_img = []
         for (iy, ix) in sub_pos:
             img = np.array([255, 255, 255], dtype=np.uint8)
             p = np.array([iy, ix]).T
             for layer in x:
-                img += layer.color(p) * layer.alpha(p) + (1 - layer.alpha(p)) * img
+                img += (layer.color(p).astype(np.float64) * layer.alpha(p) + (1 - layer.alpha(p)) * img.astype(np.float64)).astype(np.uint8)
             sub_img.append(img)
         
         # Newton-Raphson
         w = self.input_img.shape[1]
         h = self.input_img.shape[0]
         ## 初期値
-        c0 = copy.deepcopy(self.input_img[sub_pos[6]])
-        c1 = copy.deepcopy(self.input_img[sub_pos[6]])
+        max_p = 0
+        min_p = 0
+        for i in range(1, 12):
+            if sub_pos[max_p][0] + sub_pos[max_p][1] < sub_pos[i][0] + sub_pos[i][1]:
+                max_p = i
+            elif sub_pos[min_p][0] + sub_pos[min_p][1] > sub_pos[i][0] + sub_pos[i][1]:
+                min_p = i
+        c0 = copy.deepcopy(self.input_img[sub_pos[min_p]])
+        # c0 = copy.deepcopy(self.input_img[sub_pos[random.randint(0, 11)]])
+        c1 = self.input_img[sub_pos[max_p]] - c0
+        # disty = sub_pos[max_p][0] - sub_pos[min_p][0]
+        # distx = sub_pos[max_p][1] - sub_pos[min_p][1]
+        # distc = c10 - c00
+        # ocx = distc[0] / 127.0 / 2.0 / distx
+        # ocy = distc[0] / 127.0 / 2.0 / disty
+        # c1 = np.array([127, norm_color(distc[1] / (ocx*distx+ocy*disty)), norm_color(distc[1] / (ocx*distx+ocy*disty))], np.uint8)
+        # c0 = c00 - c1 * (ocx * distx + ocy * disty)
+        # a0 = 0.2
+        # a1 = 0.8
         a0 = 1.0
-        a1 = 1.0
-        oc = np.array([0, 0])
+        a1 = 0.0
+        oc = np.array([-0.1 / h, 0.1 / w])
         oa = np.array([0, 0])
+        # oc = np.array([ocx, ocy])
+        # oa = np.array([ocx, ocy])
+        # oc = np.zeros((2,))
+        # oa = np.zeros((2,))
         # x = np.array([c0[0], c0[1], c0[2], c1[0], c1[1], c1[2], a0, a1, oc[0], oc[1], oa[0], oa[1]])
-        # for _ in range(5000):
+        # print("New---")
+        # print(x)
+        # for _ in range(500):
         #     J = []
         #     f = []
         #     for i in range(12):
@@ -136,7 +159,12 @@ class Photo2ClipArt:
         #         f.append(self.fit_image(sub_pos[i][0], sub_pos[i][1], x, sub_img[i]))
         #     J = np.array(J)
         #     f = np.array(f)
-        #     x -= np.linalg.inv(J).dot(f)
+        #     x -= np.linalg.pinv(J).dot(f)
+        #     for i in range(6):
+        #         x[i] = norm_color(x[i])
+        #     x[6] = norm_alpha(x[6])
+        #     x[7] = norm_alpha(x[7])
+        # print(x)
         # c0 = np.array([x[0], x[1], x[2]], dtype=np.uint8)
         # c1 = np.array([x[3], x[4], x[5]], dtype=np.uint8)
         # a0 = x[6]
@@ -153,8 +181,14 @@ class Photo2ClipArt:
         for l in node.x:
             # l_img = np.tile(l.c0, (gen_img.shape[0], gen_img.shape[1], 1))
             # gen_img += l_img * l.domain + gen_img * (1 - l.domain)
+            # print("c0: {}, c1: {}, oc: {}, a0: {}, a1: {}, oa: {}".format(l.c0, l.c1, l.oc, l.a0, l.a1, l.oa))
             gen_img += (l.get_color_mat().astype(np.float64) * l.get_alpha_mat() + (1 - l.get_alpha_mat()) * gen_img.astype(np.float64)).astype(np.uint8)
         node.reward = self.energy(node.x, gen_img)
+        # print(node.reward)
+        # cv2.imshow('debug', gen_img)
+        # cv2.imshow('input', self.input_img)
+        # cv2.waitKey(0)
+        # cv2.destroyAllWindows()
     
     def gen_child(self, base):
         # expansion
@@ -185,7 +219,7 @@ class Photo2ClipArt:
         for i in range(len(base.children)):
             self.init_reward(base.children[i])
         base.children.sort(key=lambda x:x.reward)
-        base.children = base.children[:2]
+        base.children = base.children[:3]
 
     def monte_carlo(self):
         layer = self.fitNewLayer(copy.deepcopy(self.domains[0]), [])
@@ -196,14 +230,14 @@ class Photo2ClipArt:
         print("root domain: {}".format(len(root.x[0].domain[root.x[0].domain == 1])))
         print("first root reward = {}".format(root.reward))
         iter_cnt = 0
-        while root.size() <= 4 * len(self.domains):
+        while root.size() <= 10 * len(self.domains):
             # node selection
             base = root.select()
             # self.gen_child(base)
             if base.parent is None:
                 self.gen_child(base)
             else:
-                for i in range(len(base.parent.children)):
+                for i in range(min(len(base.parent.children), 2)):
                     self.gen_child(base.parent.children[i])
             # back propagation
             root.update_reward()
@@ -220,15 +254,23 @@ def main(file_name):
     res = root.select().x
     for i in range(len(res)):
     #    gen_layer = np.tile(res[i].c0, (res[i].domain.shape[0], res[i].domain.shape[1], 1)) # * res[i].a0
-        gen_layer = (res[i].get_color_mat().astype(np.float64) * res[i].get_alpha_mat()).astype(np.uint8)
-        bgr = cv2.split(gen_layer)
-        bgra = cv2.merge(bgr + res[i].get_alpha_mat()[:,:,0] * 255)
-        bgra[res[i].domain == 0] = 0
+        gen_layer = copy.deepcopy(res[i].get_color_mat())
+        cv2.imwrite("old/res/color_layer_{}.png".format(i), gen_layer)
+        # print(gen_layer)
+        # print(res[i].get_alpha_mat()[:,:,0] * 255)
+        # print(res[i].domain[:, :, 0] * 255)
+        alpha = cv2.split(res[i].get_alpha_mat())[0]
+        alpha *= 255
+        cv2.imwrite("old/res/alpha_layer_{}.png".format(i), alpha)
+        b, g, r = cv2.split(gen_layer)
+        bgra = cv2.merge((b, g, r, alpha.astype(np.uint8)))
+        # bgra[res[i].domain == 0] = 0
         cv2.imwrite("old/res/layer_{}.png".format(i), bgra)
         path_layer = np.zeros(res[i].domain.shape, np.uint8)
         path_layer[res[i].domain == 0] = 255
         cv2.imwrite("old/res/temp_{}.ppm".format(i), path_layer)
         os.system('potrace old/res/temp_{}.ppm -s -o old/res/temp_{}.svg'.format(i, i))
+    print(len(res))
     xdocs = []
     for i in range(len(res)):
         xdocs.append(minidom.parse("old/res/temp_{}.svg".format(i)))

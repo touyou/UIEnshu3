@@ -1,5 +1,6 @@
 import numpy as np
 import copy
+import cv2
 
 '''
 基本式の係数だけ持っていて、計算することであるピクセルの値が返るようにする（？）
@@ -14,8 +15,31 @@ class Layer:
         self.oc = oc
         self.oa = oa
         self.domain = domain
-        self.color_mat = None
-        self.alpha_mat = None
+        self.alpha_mat = np.zeros(self.domain.shape)
+        for iy in range(len(self.domain)):
+            for ix in range(len(self.domain[0])):
+                if self.domain[iy, ix, 0] == 0:
+                    continue
+                a = self.alpha(np.array([iy, ix]).T)
+                self.alpha_mat[iy, ix] = np.array([a, a, a])
+        # print(len(self.alpha_mat[self.alpha_mat != 0]))
+        self.color_mat = np.zeros(self.domain.shape, dtype=np.uint8)
+        for iy in range(len(self.domain)):
+            for ix in range(len(self.domain[0])):
+                if self.domain[iy, ix, 0] == 0:
+                    continue
+                self.color_mat[iy, ix] = self.color(np.array([iy, ix]).T)
+        # bgr= cv2.split(self.color_mat)
+        # abgr = cv2.split(self.alpha_mat)
+        # print(bgr)
+        # print(abgr)
+        # alpha = abgr[0] * 255
+        # bgra = cv2.merge([bgr[0], bgr[1], bgr[2], alpha.astype(np.uint8)])
+        # print(bgra)
+        # exit()
+        # test = self.color_mat.astype(np.float64) * self.alpha_mat - self.color_mat.astype(np.float64)
+        # self.color_mat = None
+        # self.alpha_mat = None
 
     def alpha(self, p):
         return self.a0 + self.a1 * self.oa.dot(p)
@@ -32,6 +56,8 @@ class Layer:
                         continue
                     a = self.alpha(np.array([iy, ix]).T)
                     self.alpha_mat[iy, ix] = np.array([a, a, a])
+        # print(len(self.alpha_mat[self.alpha_mat == 0]))
+        # print(len(self.domain[self.domain == 0]) / 3)
         return self.alpha_mat
     
     def get_color_mat(self):

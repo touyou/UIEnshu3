@@ -40,3 +40,17 @@ def images(node, idx, file):
     cv2.imwrite("old/res_test/{}_result_{}_{}.png".format(file, idx, node.reward), bgra)
     for i in range(len(node.children)):
         images(node.children[i], idx + str(i), file)
+        
+def norm_color(c):
+    if c < 0:
+        return 0
+    if c > 255:
+        return 255
+    return c
+
+def norm_alpha(a):
+    if a < 0:
+        return 0.0
+    if a > 1.0:
+        return 1.0
+    return a

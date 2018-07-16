@@ -24,7 +24,7 @@ class Node:
     def select(self):
         if len(self.children) == 0:
             return self
-        self.children.sort(key=lambda x:x.reward / sum([1 if i else 0 for i in x.used]))
+        self.children.sort(key=lambda x:x.reward)
         # 確率が高いのは一番rewardの値が低いchildrenのはず
         return self.children[0].select()
     
